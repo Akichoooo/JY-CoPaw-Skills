@@ -1,0 +1,18 @@
+name: serpapi-search  # 把下划线改成连字符
+version: 1.0.0
+description: 使用 SerpApi 进行联网搜索
+author: JY
+
+entry: skill.py
+function: websearch  # 这个保持正确
+
+parameters:
+  - name: query
+    type: string
+    description: 搜索关键词
+    required: true
+
+examples:
+  - "搜索 Python 教程"
+  - "查找今天的新闻"
+  - "websearch 人工智能最新进展"
