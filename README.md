@@ -6,7 +6,7 @@
 | 技能 | 目录 | 干什么 | 怎么用 | 触发词 |
 |---|---|---|---|---|
 | SerpApi 搜索 | `serpapi-search/` | 调 SerpApi 做网页/新闻搜索 | 有 `skill.yaml` + `skill.py` 入口，需要 API key | 联网搜索、查新闻、websearch |
-| 摄像机掉线时长台账 | `spd-offline-ledger/` | 南水北调中线摄像机掉线时长/在线率周报台账 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 掉线台账、在线率台账、剔除后表、运维掉线时长 |
+| 摄像机掉线时长台账 | `spd-offline-ledger/` | 摄像机掉线时长/在线率周报台账 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 掉线台账、在线率台账、剔除后表、运维掉线时长 |
 
 ## serpapi-search 配置
 
