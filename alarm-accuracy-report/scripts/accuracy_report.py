@@ -11,7 +11,7 @@
 月报:
     python accuracy_report.py monthly --month 2026-10 --ledger <目录>/台账/准确率台账.csv
 
-默认输出两份报告：准确率日报_YYYY-MM-DD.xlsx、准确率月报_YYYY-MM.xlsx；
+默认输出两份报告：准确率日报.xlsx（每天覆盖）、准确率月报_YYYY-MM.xlsx；
 台账收在 台账/准确率台账.csv，供跨天汇总。
 """
 
@@ -654,7 +654,7 @@ def cmd_daily(args) -> None:
     if args.out:
         out_path = Path(args.out).expanduser().resolve()
     else:
-        out_path = outdir / f"准确率日报_{report_date}.xlsx"
+        out_path = outdir / "准确率日报.xlsx"
     safe_save(wb, out_path)
 
     ledger_path = None
