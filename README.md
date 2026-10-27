@@ -1,13 +1,24 @@
 # JY 的 CoPaw 技能合集
 
-一个技能一个文件夹，按需取用：要用哪个就把那个文件夹拷进你的 skills 目录
-（ZCode/Claude 风格：`C:\Users\92586\.agents\skills\`）。
+一个技能一个文件夹，按项目归类，按需取用。技能文件夹保持在根目录，复制单个文件夹即可安装。
 
-| 技能 | 目录 | 干什么 | 怎么用 | 触发词 |
-|---|---|---|---|---|
-| SerpApi 搜索 | `serpapi-search/` | 调 SerpApi 做网页/新闻搜索 | 有 `skill.yaml` + `skill.py` 入口，需要 API key | 联网搜索、查新闻、websearch |
-| 摄像机掉线时长台账 | `spd-offline-ledger/` | 摄像机掉线时长/在线率周报台账 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 掉线台账、在线率台账、剔除后表、运维掉线时长 |
-| 预警准确率报告 | `alarm-accuracy-report/` | 每日预警导出 → 准确率日报；按台账汇总月报 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 预警准确率、日报、月报、误报统计 |
+安装目录：
+- Qoder：`C:\Users\92586\.qoder-cn\skills\`
+- ZCode/Claude 风格：`C:\Users\92586\.agents\skills\`
+
+找技能：先看「项目」，再看「触发词」；用 AI 时直接说任务，不用背技能名。
+
+| 项目 | 技能 | 目录 | 干什么 | 怎么用 | 触发词 |
+|---|---|---|---|---|---|
+| 百度一见 | 预警准确率报告 | `alarm-accuracy-report/` | 每日预警导出 → 准确率日报；按台账汇总月报 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 预警准确率、日报、月报、误报统计 |
+| 安防水尺 | 摄像机掉线时长台账 | `spd-offline-ledger/` | 南水北调中线摄像机掉线时长/在线率周报台账 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 掉线台账、在线率台账、剔除后表、运维掉线时长 |
+| 通用 | SerpApi 搜索 | `serpapi-search/` | 调 SerpApi 做网页/新闻搜索 | 有 `skill.yaml` + `skill.py` 入口，需要 API key | 联网搜索、查新闻、websearch |
+
+项目只是分类标签，不单独建目录：安装时拷贝的是 `alarm-accuracy-report/` 这一层，不是项目层。
+
+- **百度一见**：视觉算法预警平台，产出预警准确率日报/月报。
+- **安防水尺**：南水北调中线摄像机掉线/在线率台账。
+- **通用**：与具体项目无关的工具。
 
 ## serpapi-search 配置
 
@@ -55,4 +66,5 @@ python alarm-accuracy-report/scripts/accuracy_report.py monthly \
 ## 加新技能
 
 在仓库根目录新建一个同名文件夹，放进 `SKILL.md`（必须）和脚本；如果这个技能需要
-Python 入口，再加 `skill.yaml` + `skill.py`。然后在上面表格里补一行。
+Python 入口，再加 `skill.yaml` + `skill.py`。然后在上面表格里补一行，项目列填
+`百度一见` / `安防水尺` / `通用`。
