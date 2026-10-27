@@ -9,7 +9,10 @@
         --reason "区域入侵=算法误识别：022镜头把围栏识别成人"
 
 月报:
-    python accuracy_report.py monthly --month 2026-10 --ledger <目录>/准确率台账.csv
+    python accuracy_report.py monthly --month 2026-10 --ledger <目录>/台账/准确率台账.csv
+
+默认输出两份报告：准确率日报_YYYY-MM-DD.xlsx、准确率月报_YYYY-MM.xlsx；
+台账收在 台账/准确率台账.csv，供跨天汇总。
 """
 
 from __future__ import annotations
@@ -651,7 +654,7 @@ def cmd_daily(args) -> None:
     if args.out:
         out_path = Path(args.out).expanduser().resolve()
     else:
-        out_path = outdir / f"{export.stem}_准确率.xlsx"
+        out_path = outdir / f"准确率日报_{report_date}.xlsx"
     safe_save(wb, out_path)
 
     ledger_path = None
@@ -661,7 +664,7 @@ def cmd_daily(args) -> None:
             if ledger_path.is_dir():
                 ledger_path = ledger_path / "准确率台账.csv"
         else:
-            ledger_path = outdir / "准确率台账.csv"
+            ledger_path = outdir / "台账" / "准确率台账.csv"
         update_ledger(ledger_path, report_date, records)
 
     total = data["total"]
@@ -1210,6 +1213,13 @@ def build_monthly_workbook(month: str, rows: list[dict], today: date):
     return wb, summary
 
 
+def default_monthly_outdir(ledger_path: Path) -> Path:
+    """台账放在 台账/ 子目录时，月报输出到它的上一级。"""
+    if ledger_path.parent.name in {"台账", "台账数据", "data"}:
+        return ledger_path.parent.parent
+    return ledger_path.parent
+
+
 def cmd_monthly(args) -> None:
     month = args.month.strip()
     if not re.fullmatch(r"\d{4}-\d{2}", month):
@@ -1232,7 +1242,7 @@ def cmd_monthly(args) -> None:
     if args.out:
         out_path = Path(args.out).expanduser().resolve()
     else:
-        out_path = ledger_path.parent / f"月度准确率_{month}.xlsx"
+        out_path = default_monthly_outdir(ledger_path) / f"准确率月报_{month}.xlsx"
     safe_save(wb, out_path)
 
     print(
@@ -1265,7 +1275,7 @@ def build_parser() -> argparse.ArgumentParser:
             "--reason \"夜间区域入侵=算法误识别：把门识别成人\" "
             "--reason \"区域入侵=算法误识别：022镜头把围栏识别成人\"\n"
             "  python accuracy_report.py monthly --month 2026-10 "
-            "--ledger 准确率台账.csv"
+            "--ledger 台账/准确率台账.csv"
         ),
     )
     parser.add_argument("--debug", action="store_true", help="出错时打印完整堆栈")
@@ -1289,7 +1299,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     daily.add_argument("--outdir", help="输出目录，默认与导出文件同目录")
     daily.add_argument("--out", help="日报 xlsx 的完整输出路径")
-    daily.add_argument("--ledger", help="台账 CSV 路径，默认输出目录/准确率台账.csv")
+    daily.add_argument("--ledger", help="台账 CSV 路径，默认输出目录/台账/准确率台账.csv")
     daily.add_argument("--no-ledger", action="store_true", help="不更新台账")
     daily.set_defaults(func=cmd_daily)
 

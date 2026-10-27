@@ -58,12 +58,12 @@ python alarm-accuracy-report/scripts/accuracy_report.py daily <导出.xlsx> \
   --reason "夜间区域入侵=算法误识别：把门识别成人" \
   --reason "区域入侵=算法误识别：022镜头把围栏识别成人"
 
-# 月报：读日报自动维护的 准确率台账.csv
+# 月报：读日报自动维护的 台账/准确率台账.csv
 python alarm-accuracy-report/scripts/accuracy_report.py monthly \
-  --month 2026-10 --ledger <工作目录>/准确率台账.csv
+  --month 2026-10 --ledger <工作目录>/台账/准确率台账.csv
 ```
 
-误报原因会写入日报和台账；没有填的技能显示“未填写”，脚本也会提示。
+默认输出两份报告：`准确率日报_YYYY-MM-DD.xlsx` 和 `准确率月报_YYYY-MM.xlsx`；台账收在 `台账/` 子目录。误报原因会写入日报和台账；没有填的技能显示“未填写”，脚本也会提示。
 
 口径细节见 `alarm-accuracy-report/SKILL.md`。
 
