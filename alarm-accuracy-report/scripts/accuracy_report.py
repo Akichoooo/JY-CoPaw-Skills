@@ -4,7 +4,9 @@
 
 日报:
     python accuracy_report.py daily <导出.xlsx> --date 2026-10-26 \
-        --false "夜间区域入侵=3" --false "区域入侵=1" --false "烟雾识别=all"
+        --false "夜间区域入侵=3" --false "区域入侵=1" --false "烟雾识别=all" \
+        --reason "夜间区域入侵=算法误识别：把门识别成人" \
+        --reason "区域入侵=算法误识别：022镜头把围栏识别成人"
 
 月报:
     python accuracy_report.py monthly --month 2026-10 --ledger <目录>/准确率台账.csv
@@ -52,6 +54,7 @@ LEDGER_COLUMNS = [
     "预警技能",
     "预警总数",
     "误报数",
+    "误报原因",
     "准确数",
     "准确率",
     "数据源",
@@ -150,7 +153,7 @@ def write_header_row(ws, row: int, headers: list[str]) -> None:
 
 def write_row(ws, row: int, values: list, percent_cols=(), bold: bool = False,
               fill: str | None = None, font_color: str | None = None,
-              center_first: bool = False) -> None:
+              center_first: bool = False, left_cols=()) -> None:
     for col, value in enumerate(values, 1):
         cell = ws.cell(row, col, value)
         cell.font = Font(
@@ -158,7 +161,7 @@ def write_row(ws, row: int, values: list, percent_cols=(), bold: bool = False,
             color=font_color if font_color else "000000",
         )
         cell.border = thin_border()
-        centered = center_first or col > 1
+        centered = (center_first or col > 1) and col not in left_cols
         cell.alignment = Alignment(
             horizontal="center" if centered else "left",
             vertical="center", wrap_text=True,
@@ -322,9 +325,40 @@ def parse_false_specs(specs: list[str], counts: Counter):
     return false, specified, all_skills, assumed
 
 
+def parse_reason_specs(specs: list[str], counts: Counter, false: dict) -> dict[str, str]:
+    reasons: dict[str, str] = {}
+    if not specs:
+        return reasons
+    if not any(false.values()):
+        raise UserError(
+            "提供了 --reason，但所有技能的误报数都是 0；请先用 --false 指定误报条数。"
+        )
+
+    for spec in specs:
+        if "=" not in spec:
+            raise UserError(f"误报原因格式应为 技能=原因，收到：{spec}")
+        name, raw = spec.split("=", 1)
+        name = name.strip()
+        reason = re.sub(r"\s+", " ", raw).strip()
+        if name not in counts:
+            available = "、".join(sorted(counts, key=lambda key: (-counts[key], key)))
+            raise UserError(f"技能“{name}”不在导出表中。可选技能：{available}")
+        if name in reasons:
+            raise UserError(f"技能“{name}”的误报原因重复指定。")
+        if not reason:
+            raise UserError(f"技能“{name}”的误报原因为空。")
+        if false.get(name, 0) <= 0:
+            raise UserError(
+                f"技能“{name}”的误报数为 0，不需要填写误报原因。"
+            )
+        reasons[name] = reason
+
+    return reasons
+
+
 def build_daily_workbook(report_date: str, data: dict, false: dict,
                          specified: dict, all_skills: set,
-                         assumed: list) -> tuple[Workbook, list[dict]]:
+                         assumed: list, reasons: dict) -> tuple[Workbook, list[dict]]:
     total = data["total"]
     false_total = sum(false.values())
     accurate_total = total - false_total
@@ -341,6 +375,7 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
             "预警技能": skill,
             "预警总数": count,
             "误报数": mis,
+            "误报原因": reasons.get(skill, ""),
             "准确数": count - mis,
             "准确率": (count - mis) / count,
             "数据源": data["source"],
@@ -353,7 +388,7 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
     ws = wb.active
     ws.title = "准确率统计"
     ws.sheet_view.showGridLines = False
-    ncols = 6
+    ncols = 7
 
     add_title(ws, "预警准确率日报", ncols)
     add_note(
@@ -364,13 +399,13 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
     )
     add_note(
         ws, 3,
-        "口径：准确率 =（预警总数 − 误报数）÷ 预警总数；误报数为人工核对结果。",
+        "口径：准确率 =（预警总数 − 误报数）÷ 预警总数；误报数与误报原因均为人工核对结果。",
         ncols,
     )
 
     header_row = 5
     write_header_row(ws, header_row, [
-        "预警技能", "预警总数", "误报数", "准确数", "准确率", "核对方式",
+        "预警技能", "预警总数", "误报数", "准确数", "准确率", "误报原因", "核对方式",
     ])
 
     row = header_row + 1
@@ -386,16 +421,19 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
             note = "未提及，按 0 误报"
         low = accuracy < 0.9
         write_row(
-            ws, row, [skill, count, mis, count - mis, accuracy, note],
+            ws, row,
+            [skill, count, mis, count - mis, accuracy,
+             reasons.get(skill, "") or ("—" if mis == 0 else "未填写"), note],
             percent_cols=(5,),
             fill=COLOR_BAD_FILL if low else None,
             font_color=COLOR_BAD_FONT if low else None,
             bold=low,
+            left_cols=(6,),
         )
         row += 1
 
     write_row(
-        ws, row, ["合计", total, false_total, accurate_total, accuracy_total, ""],
+        ws, row, ["合计", total, false_total, accurate_total, accuracy_total, "", ""],
         percent_cols=(5,), bold=True, fill=COLOR_NAVY_LIGHT,
     )
     for col in range(1, ncols + 1):
@@ -414,11 +452,27 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
         if skill not in specified:
             continue
         if skill in all_skills:
-            specified_parts.append(f"{skill} {false[skill]} 条（全部误报）")
+            part = f"{skill} {false[skill]} 条（全部误报）"
         else:
-            specified_parts.append(f"{skill} {false[skill]} 条")
+            part = f"{skill} {false[skill]} 条"
+        if reasons.get(skill):
+            part += f"（{reasons[skill]}）"
+        specified_parts.append(part)
     if specified_parts:
         add_note(ws, note_row, "误报来源：" + "；".join(specified_parts) + "。", ncols)
+        note_row += 1
+    missing_reason = [
+        f"{skill}（{false[skill]} 条）"
+        for skill in skills
+        if false[skill] > 0 and not reasons.get(skill)
+    ]
+    if missing_reason:
+        add_note(
+            ws, note_row,
+            "以下误报未填写原因：" + "、".join(missing_reason)
+            + "。可补充 --reason 后重跑。",
+            ncols, fill=COLOR_WARN_FILL, font_color=COLOR_WARN_FONT, bold=True,
+        )
         note_row += 1
     if assumed:
         add_note(
@@ -437,7 +491,7 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
         note_row += 1
     add_note(ws, note_row, f"生成时间：{generated_at}", ncols)
 
-    widths = {"A": 20, "B": 11, "C": 10, "D": 10, "E": 11, "F": 18}
+    widths = {"A": 20, "B": 11, "C": 10, "D": 10, "E": 11, "F": 34, "G": 18}
     for col, width in widths.items():
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A6"
@@ -445,14 +499,14 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
     # 明细核对
     ws2 = wb.create_sheet("明细核对")
     ws2.sheet_view.showGridLines = False
-    add_title(ws2, "预警准确率明细核对", 6, size=13)
+    add_title(ws2, "预警准确率明细核对", 7, size=13)
     add_note(
         ws2, 2,
         f"报表日期：{report_date}　｜　数据源：{data['source']}　｜　预警总数：{total} 条",
-        6,
+        7,
     )
     write_header_row(ws2, 4, [
-        "预警技能", "预警总数", "误报数", "准确数", "准确率", "核对说明",
+        "预警技能", "预警总数", "误报数", "准确数", "准确率", "误报原因", "核对说明",
     ])
     row2 = 5
     for skill in skills:
@@ -466,18 +520,23 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
         else:
             note = "未提及，按 0 误报"
         write_row(
-            ws2, row2, [skill, count, mis, count - mis, accuracy, note],
+            ws2, row2,
+            [skill, count, mis, count - mis, accuracy,
+             reasons.get(skill, "") or ("—" if mis == 0 else "未填写"), note],
             percent_cols=(5,),
             font_color=COLOR_BAD_FONT if accuracy < 0.9 else None,
             bold=accuracy < 0.9,
+            left_cols=(6,),
         )
         row2 += 1
     add_note(
         ws2, row2 + 1,
         "“未提及，按 0 误报”表示当天用户只报了其他技能的误报数；如该技能实际有误报，请补充后重跑。",
-        6,
+        7,
     )
-    for col, width in {"A": 20, "B": 11, "C": 10, "D": 10, "E": 11, "F": 24}.items():
+    for col, width in {
+        "A": 20, "B": 11, "C": 10, "D": 10, "E": 11, "F": 34, "G": 24,
+    }.items():
         ws2.column_dimensions[col].width = width
     ws2.freeze_panes = "A5"
 
@@ -491,16 +550,17 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
             ws3, row3,
             [
                 item["报表日期"], item["预警技能"], item["预警总数"],
-                item["误报数"], item["准确数"], item["准确率"],
+                item["误报数"], item["误报原因"], item["准确数"], item["准确率"],
                 item["数据源"], item["统计开始"], item["统计结束"],
                 item["生成时间"],
             ],
-            percent_cols=(6,),
+            percent_cols=(7,),
+            left_cols=(5,),
         )
         row3 += 1
     widths3 = {
-        "A": 12, "B": 18, "C": 10, "D": 10, "E": 10,
-        "F": 10, "G": 26, "H": 20, "I": 20, "J": 20,
+        "A": 12, "B": 18, "C": 10, "D": 10, "E": 34,
+        "F": 10, "G": 10, "H": 26, "I": 20, "J": 20, "K": 20,
     }
     for col, width in widths3.items():
         ws3.column_dimensions[col].width = width
@@ -579,8 +639,9 @@ def cmd_daily(args) -> None:
     if not args.false:
         print("提示：未指定任何 --false，所有技能按 0 误报计算。")
     false, specified, all_skills, assumed = parse_false_specs(args.false, data["counts"])
+    reasons = parse_reason_specs(args.reason, data["counts"], false)
     wb, records = build_daily_workbook(
-        report_date, data, false, specified, all_skills, assumed,
+        report_date, data, false, specified, all_skills, assumed, reasons,
     )
 
     outdir = Path(args.outdir).expanduser().resolve() if args.outdir else export.parent
@@ -611,7 +672,18 @@ def cmd_daily(args) -> None:
     for skill in sorted(data["counts"], key=lambda key: (-data["counts"][key], key)):
         count = data["counts"][skill]
         mis = false[skill]
-        print(f"  {skill}: {count} 条，误报 {mis}，准确率 {(count - mis) / count:.1%}")
+        extra = f"，原因：{reasons[skill]}" if reasons.get(skill) else ""
+        print(
+            f"  {skill}: {count} 条，误报 {mis}，"
+            f"准确率 {(count - mis) / count:.1%}{extra}"
+        )
+    missing_reason = [
+        f"{skill}（{false[skill]} 条）"
+        for skill in data["counts"]
+        if false[skill] > 0 and not reasons.get(skill)
+    ]
+    if missing_reason:
+        print("  未填写误报原因：" + "、".join(missing_reason))
     if assumed:
         print("  未提及、按 0 误报：" + "、".join(assumed))
     print(f"日报输出：{out_path}")
@@ -661,6 +733,7 @@ def read_ledger(path: Path) -> list[dict]:
                 "skill": skill,
                 "total": total,
                 "false": mis,
+                "reason": str(item.get("误报原因") or "").strip(),
                 "accurate": total - mis,
                 "accuracy": (total - mis) / total,
                 "source": item.get("数据源", ""),
@@ -717,12 +790,15 @@ def build_monthly_workbook(month: str, rows: list[dict], today: date):
     for item in month_rows:
         skill_data = skills.setdefault(
             item["skill"],
-            {"total": 0, "false": 0, "accurate": 0, "days": set()},
+            {"total": 0, "false": 0, "accurate": 0, "days": set(), "reasons": []},
         )
         skill_data["total"] += item["total"]
         skill_data["false"] += item["false"]
         skill_data["accurate"] += item["accurate"]
         skill_data["days"].add(item["date"])
+        reason = item.get("reason", "")
+        if reason and reason not in skill_data["reasons"]:
+            skill_data["reasons"].append(reason)
 
         day_data = days.setdefault(
             item["date"], {"total": 0, "false": 0, "accurate": 0},
@@ -750,7 +826,7 @@ def build_monthly_workbook(month: str, rows: list[dict], today: date):
     ws = wb.active
     ws.title = "月度总览"
     ws.sheet_view.showGridLines = False
-    ncols = 7
+    ncols = 8
 
     add_title(ws, f"{year}年{mon:02d}月 预警准确率月报", ncols)
     add_note(
@@ -803,29 +879,34 @@ def build_monthly_workbook(month: str, rows: list[dict], today: date):
     add_section(ws, row, "一、按技能汇总", ncols)
     row += 1
     write_header_row(ws, row, [
-        "预警技能", "预警总数", "误报数", "准确数", "月准确率", "占总量", "有数据天数",
+        "预警技能", "预警总数", "误报数", "误报原因", "准确数", "月准确率", "占总量", "有数据天数",
     ])
     row += 1
     for skill in skill_order:
         item = skills[skill]
         accuracy = item["accurate"] / item["total"]
         low = accuracy < 0.9
+        reason_text = (
+            "；".join(item["reasons"]) if item["reasons"]
+            else ("未填写" if item["false"] > 0 else "—")
+        )
         write_row(
             ws, row,
             [
-                skill, item["total"], item["false"], item["accurate"],
-                accuracy, item["total"] / total, len(item["days"]),
+                skill, item["total"], item["false"], reason_text,
+                item["accurate"], accuracy, item["total"] / total, len(item["days"]),
             ],
-            percent_cols=(5, 6),
+            percent_cols=(6, 7),
             fill=COLOR_BAD_FILL if low else None,
             font_color=COLOR_BAD_FONT if low else None,
             bold=low,
+            left_cols=(4,),
         )
         row += 1
     write_row(
         ws, row,
-        ["合计", total, false_total, accurate_total, accuracy_total, 1.0, days_with_data],
-        percent_cols=(5, 6), bold=True, fill=COLOR_NAVY_LIGHT,
+        ["合计", total, false_total, "", accurate_total, accuracy_total, 1.0, days_with_data],
+        percent_cols=(6, 7), bold=True, fill=COLOR_NAVY_LIGHT,
     )
     for col in range(1, ncols + 1):
         cell = ws.cell(row, col)
@@ -914,7 +995,7 @@ def build_monthly_workbook(month: str, rows: list[dict], today: date):
     row += 1
     add_note(ws, row, f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ncols)
 
-    widths = {"A": 20, "B": 11, "C": 10, "D": 10, "E": 11, "F": 10, "G": 22}
+    widths = {"A": 20, "B": 11, "C": 10, "D": 36, "E": 10, "F": 11, "G": 10, "H": 12}
     for col, width in widths.items():
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A9"
@@ -1098,15 +1179,16 @@ def build_monthly_workbook(month: str, rows: list[dict], today: date):
             ws4, row4,
             [
                 item["date"], item["skill"], item["total"], item["false"],
-                item["accurate"], item["accuracy"], item["source"],
+                item["reason"], item["accurate"], item["accuracy"], item["source"],
                 item["start"], item["end"], item["generated"],
             ],
-            percent_cols=(6,),
+            percent_cols=(7,),
+            left_cols=(5,),
         )
         row4 += 1
     widths4 = {
-        "A": 12, "B": 18, "C": 10, "D": 10, "E": 10,
-        "F": 10, "G": 26, "H": 20, "I": 20, "J": 20,
+        "A": 12, "B": 18, "C": 10, "D": 10, "E": 34,
+        "F": 10, "G": 10, "H": 26, "I": 20, "J": 20, "K": 20,
     }
     for col, width in widths4.items():
         ws4.column_dimensions[col].width = width
@@ -1176,7 +1258,9 @@ def build_parser() -> argparse.ArgumentParser:
         epilog=(
             "示例：\n"
             "  python accuracy_report.py daily 26日-27日早9点.xlsx --date 2026-10-26 "
-            "--false \"夜间区域入侵=3\" --false \"区域入侵=1\" --false \"烟雾识别=all\"\n"
+            "--false \"夜间区域入侵=3\" --false \"区域入侵=1\" --false \"烟雾识别=all\" "
+            "--reason \"夜间区域入侵=算法误识别：把门识别成人\" "
+            "--reason \"区域入侵=算法误识别：022镜头把围栏识别成人\"\n"
             "  python accuracy_report.py monthly --month 2026-10 "
             "--ledger 准确率台账.csv"
         ),
@@ -1190,6 +1274,10 @@ def build_parser() -> argparse.ArgumentParser:
     daily.add_argument(
         "--false", action="append", default=[], metavar="技能=数量|all",
         help="某技能的误报条数，可重复；all 表示该技能全部误报",
+    )
+    daily.add_argument(
+        "--reason", action="append", default=[], metavar="技能=原因",
+        help="某技能的误报原因，可重复；通常与 --false 配套，未填写的显示“未填写”",
     )
     daily.add_argument("--sheet", help="工作表名，默认自动查找包含“预警技能”的表")
     daily.add_argument(
