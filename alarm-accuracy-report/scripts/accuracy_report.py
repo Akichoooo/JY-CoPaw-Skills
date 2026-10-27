@@ -420,16 +420,17 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
         else:
             note = "未提及，按 0 误报"
         low = accuracy < 0.9
+        reason_text = reasons.get(skill, "") or ("—" if mis == 0 else "未填写")
         write_row(
             ws, row,
-            [skill, count, mis, count - mis, accuracy,
-             reasons.get(skill, "") or ("—" if mis == 0 else "未填写"), note],
+            [skill, count, mis, count - mis, accuracy, reason_text, note],
             percent_cols=(5,),
             fill=COLOR_BAD_FILL if low else None,
             font_color=COLOR_BAD_FONT if low else None,
             bold=low,
             left_cols=(6,),
         )
+        ws.row_dimensions[row].height = 28 if len(reason_text) > 18 else 22
         row += 1
 
     write_row(
@@ -491,7 +492,7 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
         note_row += 1
     add_note(ws, note_row, f"生成时间：{generated_at}", ncols)
 
-    widths = {"A": 20, "B": 11, "C": 10, "D": 10, "E": 11, "F": 34, "G": 18}
+    widths = {"A": 20, "B": 11, "C": 10, "D": 10, "E": 11, "F": 40, "G": 18}
     for col, width in widths.items():
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A6"
@@ -519,15 +520,16 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
             note = f"人工核对：{mis} 条误报"
         else:
             note = "未提及，按 0 误报"
+        reason_text = reasons.get(skill, "") or ("—" if mis == 0 else "未填写")
         write_row(
             ws2, row2,
-            [skill, count, mis, count - mis, accuracy,
-             reasons.get(skill, "") or ("—" if mis == 0 else "未填写"), note],
+            [skill, count, mis, count - mis, accuracy, reason_text, note],
             percent_cols=(5,),
             font_color=COLOR_BAD_FONT if accuracy < 0.9 else None,
             bold=accuracy < 0.9,
             left_cols=(6,),
         )
+        ws2.row_dimensions[row2].height = 28 if len(reason_text) > 18 else 22
         row2 += 1
     add_note(
         ws2, row2 + 1,
@@ -535,7 +537,7 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
         7,
     )
     for col, width in {
-        "A": 20, "B": 11, "C": 10, "D": 10, "E": 11, "F": 34, "G": 24,
+        "A": 20, "B": 11, "C": 10, "D": 10, "E": 11, "F": 40, "G": 24,
     }.items():
         ws2.column_dimensions[col].width = width
     ws2.freeze_panes = "A5"
@@ -559,7 +561,7 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
         )
         row3 += 1
     widths3 = {
-        "A": 12, "B": 18, "C": 10, "D": 10, "E": 34,
+        "A": 12, "B": 18, "C": 10, "D": 10, "E": 40,
         "F": 10, "G": 10, "H": 26, "I": 20, "J": 20, "K": 20,
     }
     for col, width in widths3.items():
@@ -902,6 +904,7 @@ def build_monthly_workbook(month: str, rows: list[dict], today: date):
             bold=low,
             left_cols=(4,),
         )
+        ws.row_dimensions[row].height = 28 if len(reason_text) > 18 else 22
         row += 1
     write_row(
         ws, row,
@@ -995,7 +998,7 @@ def build_monthly_workbook(month: str, rows: list[dict], today: date):
     row += 1
     add_note(ws, row, f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ncols)
 
-    widths = {"A": 20, "B": 11, "C": 10, "D": 36, "E": 10, "F": 11, "G": 10, "H": 12}
+    widths = {"A": 20, "B": 11, "C": 10, "D": 42, "E": 10, "F": 11, "G": 10, "H": 12}
     for col, width in widths.items():
         ws.column_dimensions[col].width = width
     ws.freeze_panes = "A9"
@@ -1187,7 +1190,7 @@ def build_monthly_workbook(month: str, rows: list[dict], today: date):
         )
         row4 += 1
     widths4 = {
-        "A": 12, "B": 18, "C": 10, "D": 10, "E": 34,
+        "A": 12, "B": 18, "C": 10, "D": 10, "E": 40,
         "F": 10, "G": 10, "H": 26, "I": 20, "J": 20, "K": 20,
     }
     for col, width in widths4.items():
