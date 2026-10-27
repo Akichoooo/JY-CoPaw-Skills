@@ -7,6 +7,7 @@
 |---|---|---|---|---|
 | SerpApi 搜索 | `serpapi-search/` | 调 SerpApi 做网页/新闻搜索 | 有 `skill.yaml` + `skill.py` 入口，需要 API key | 联网搜索、查新闻、websearch |
 | 摄像机掉线时长台账 | `spd-offline-ledger/` | 摄像机掉线时长/在线率周报台账 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 掉线台账、在线率台账、剔除后表、运维掉线时长 |
+| 预警准确率报告 | `alarm-accuracy-report/` | 每日预警导出 → 准确率日报；按台账汇总月报 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 预警准确率、日报、月报、误报统计 |
 
 ## serpapi-search 配置
 
@@ -35,6 +36,21 @@ python spd-offline-ledger/scripts/fill_xinbiao.py <工作目录> [新表.xlsx] [
 ```
 
 口径细节见 `spd-offline-ledger/SKILL.md`。
+
+## alarm-accuracy-report 用法
+
+```bash
+# 日报：导出表 + 各技能误报数（未提到的技能按 0 误报）
+python alarm-accuracy-report/scripts/accuracy_report.py daily <导出.xlsx> \
+  --date 2026-10-26 \
+  --false "夜间区域入侵=3" --false "区域入侵=1" --false "烟雾识别=all"
+
+# 月报：读日报自动维护的 准确率台账.csv
+python alarm-accuracy-report/scripts/accuracy_report.py monthly \
+  --month 2026-10 --ledger <工作目录>/准确率台账.csv
+```
+
+口径细节见 `alarm-accuracy-report/SKILL.md`。
 
 ## 加新技能
 
