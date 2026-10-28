@@ -20,7 +20,9 @@ from __future__ import annotations
 import argparse
 import calendar
 import csv
+import filecmp
 import re
+import shutil
 import sys
 import traceback
 from collections import Counter
@@ -1350,6 +1352,87 @@ def cmd_monthly(args) -> None:
     print(f"月报输出：{out_path}")
 
 
+def cmd_archive(args) -> None:
+    month = args.month.strip()
+    if not re.fullmatch(r"\d{4}-\d{2}", month):
+        raise UserError(f"--month 格式应为 YYYY-MM，收到：{month}")
+    year, mon = [int(part) for part in month.split("-")]
+    if not 1 <= mon <= 12:
+        raise UserError(f"--month 月份不合法：{month}")
+    try:
+        date(year, mon, 1)
+    except ValueError:
+        raise UserError(f"--month 不是有效月份：{month}")
+
+    today_month = date.today().strftime("%Y-%m")
+    if month > today_month:
+        raise UserError(f"{month} 还没到，不能归档。")
+    if month == today_month and not args.force:
+        raise UserError(
+            f"{month} 还没结束。确认要归档当前月份，请加 --force。"
+        )
+
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        if args.outdir else Path.cwd()
+    )
+    if not outdir.is_dir():
+        raise UserError(f"工作目录不存在：{outdir}")
+
+    archive_root = outdir / args.archive_root if args.archive_root else outdir
+    archive_dir = archive_root / month
+    if archive_dir.exists() and not archive_dir.is_dir():
+        raise UserError(f"归档路径已存在且不是文件夹：{archive_dir}")
+
+    daily_files = sorted(outdir.glob(f"准确率日报_{month}-*.xlsx"))
+    monthly_file = outdir / f"准确率月报_{month}.xlsx"
+    files = list(daily_files)
+    if monthly_file.exists():
+        files.append(monthly_file)
+    else:
+        print(
+            f"提示：没有找到 {monthly_file.name}，本次只归档日报；"
+            "月报生成后再跑一次 archive 即可。"
+        )
+    if not files:
+        print(f"没有找到 {month} 的日报或月报，未执行归档。")
+        return
+
+    conflicts = []
+    for src in files:
+        dest = archive_dir / src.name
+        if dest.exists() and not (
+            dest.is_file() and filecmp.cmp(src, dest, shallow=False)
+        ):
+            conflicts.append(dest)
+    if conflicts:
+        raise UserError(
+            "归档目标已存在且内容不同，请先检查：\n"
+            + "\n".join(str(path) for path in conflicts)
+        )
+
+    if args.dry_run:
+        print(f"预览：将归档 {len(files)} 个文件到 {archive_dir}")
+        for src in files:
+            print(f"  {src.name}")
+        return
+
+    archive_dir.mkdir(parents=True, exist_ok=True)
+    moved = 0
+    skipped = 0
+    for src in files:
+        dest = archive_dir / src.name
+        if dest.exists():
+            src.unlink()
+            skipped += 1
+        else:
+            shutil.move(str(src), str(dest))
+            moved += 1
+    print(
+        f"归档完成：移动 {moved} 个，跳过已存在 {skipped} 个 → {archive_dir}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -1365,7 +1448,9 @@ def build_parser() -> argparse.ArgumentParser:
             "--reason \"夜间区域入侵=算法误识别：把门识别成人\" "
             "--reason \"区域入侵=算法误识别：022镜头把围栏识别成人\"\n"
             "  python accuracy_report.py monthly --month 2026-10 "
-            "--ledger 台账/准确率台账.csv"
+            "--ledger 台账/准确率台账.csv\n"
+            "  python accuracy_report.py archive --month 2026-10 "
+            "--outdir <工作目录>"
         ),
     )
     parser.add_argument("--debug", action="store_true", help="出错时打印完整堆栈")
@@ -1403,6 +1488,23 @@ def build_parser() -> argparse.ArgumentParser:
     monthly.add_argument("--out", help="月报 xlsx 的完整输出路径")
     monthly.add_argument("--today", help="调试用：把“今天”固定为 YYYY-MM-DD")
     monthly.set_defaults(func=cmd_monthly)
+
+    archive = sub.add_parser(
+        "archive", help="把某个月的日报和月报移动到 归档/YYYY-MM/"
+    )
+    archive.add_argument("--month", required=True, help="月份 YYYY-MM")
+    archive.add_argument("--outdir", help="工作目录，默认当前目录")
+    archive.add_argument(
+        "--archive-root", default="归档",
+        help="归档根目录名，默认 归档；设为空字符串则直接建 YYYY-MM/",
+    )
+    archive.add_argument(
+        "--dry-run", action="store_true", help="只预览要移动的文件，不实际移动"
+    )
+    archive.add_argument(
+        "--force", action="store_true", help="允许归档当前月份"
+    )
+    archive.set_defaults(func=cmd_archive)
 
     return parser
 

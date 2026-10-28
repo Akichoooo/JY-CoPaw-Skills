@@ -10,7 +10,7 @@
 
 | 项目 | 技能 | 目录 | 干什么 | 怎么用 | 触发词 |
 |---|---|---|---|---|---|
-| 百度一见 | 预警准确率报告 | `alarm-accuracy-report/` | 每日预警导出 → 准确率日报（含误报原因）；按台账汇总月报 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 预警准确率、日报、月报、误报统计 |
+| 百度一见 | 预警准确率报告 | `alarm-accuracy-report/` | 每日预警导出 → 准确率日报（含误报原因）；按台账汇总月报；月末归档 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 预警准确率、日报、月报、误报统计 |
 | 安防水尺 | 摄像机掉线时长台账 | `spd-offline-ledger/` | 南水北调中线摄像机掉线时长/在线率周报台账 | 只有 `SKILL.md` + 脚本，AI 读说明后自己跑脚本 | 掉线台账、在线率台账、剔除后表、运维掉线时长 |
 | 通用 | SerpApi 搜索 | `serpapi-search/` | 调 SerpApi 做网页/新闻搜索 | 有 `skill.yaml` + `skill.py` 入口，需要 API key | 联网搜索、查新闻、websearch |
 
@@ -61,9 +61,13 @@ python alarm-accuracy-report/scripts/accuracy_report.py daily <导出.xlsx> \
 # 月报：读日报自动维护的 台账/准确率台账.csv
 python alarm-accuracy-report/scripts/accuracy_report.py monthly \
   --month 2026-10 --ledger <工作目录>/台账/准确率台账.csv
+
+# 月末归档：日报/月报 → 归档/2026-10/（台账不动）
+python alarm-accuracy-report/scripts/accuracy_report.py archive \
+  --month 2026-10 --outdir <工作目录>
 ```
 
-默认输出：`准确率日报_YYYY-MM-DD.xlsx`（每天一份，不覆盖昨天）和 `准确率月报_YYYY-MM.xlsx`；台账收在 `台账/` 子目录。误报原因会写入日报和台账；没有填的技能显示“未填写”，脚本也会提示。导出里有测试技能（如 `机器狗测试技能`）时，加 `--exclude "机器狗测试技能"`，不计入总数和准确率。
+默认输出：`准确率日报_YYYY-MM-DD.xlsx`（每天一份，不覆盖昨天）和 `准确率月报_YYYY-MM.xlsx`；台账收在 `台账/` 子目录。误报原因会写入日报和台账；没有填的技能显示“未填写”，脚本也会提示。导出里有测试技能（如 `机器狗测试技能`）时，加 `--exclude "机器狗测试技能"`，不计入总数和准确率。月末归档只移动报告，台账留在 `台账/`，历史月报仍可重跑。
 
 口径细节见 `alarm-accuracy-report/SKILL.md`。
 
