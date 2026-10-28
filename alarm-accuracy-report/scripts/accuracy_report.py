@@ -188,6 +188,80 @@ def safe_save(wb, path: Path) -> None:
         raise UserError(f"无法写入 {path}：{exc}")
 
 
+DAILY_RE = re.compile(r"^准确率日报_(\d{4}-\d{2}-\d{2})\.xlsx$")
+MONTHLY_RE = re.compile(r"^准确率月报_(\d{4}-\d{2})\.xlsx$")
+
+
+def _move_report(src: Path, dest: Path) -> str:
+    try:
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.exists():
+            if dest.is_file() and filecmp.cmp(src, dest, shallow=False):
+                src.unlink()
+                return "skipped"
+            return "conflict"
+        shutil.move(str(src), str(dest))
+        return "moved"
+    except OSError:
+        return "locked"
+
+
+def tidy_reports(outdir: Path) -> tuple[int, int, list[str]]:
+    """根目录只留最新一份日报和月报，其余收进 归档/YYYY-MM/。"""
+    dailies = []
+    for path in outdir.glob("准确率日报_*.xlsx"):
+        match = DAILY_RE.match(path.name)
+        if match:
+            dailies.append((match.group(1), path))
+    monthlies = []
+    for path in outdir.glob("准确率月报_*.xlsx"):
+        match = MONTHLY_RE.match(path.name)
+        if match:
+            monthlies.append((match.group(1), path))
+
+    if not dailies and not monthlies:
+        return 0, 0, []
+
+    latest_daily = max(date for date, _ in dailies) if dailies else None
+    latest_monthly = max(month for month, _ in monthlies) if monthlies else None
+    moved = 0
+    skipped = 0
+    problems = []
+
+    for date, path in sorted(dailies):
+        if date == latest_daily:
+            continue
+        dest = outdir / "归档" / date[:7] / "日报" / path.name
+        result = _move_report(path, dest)
+        if result == "moved":
+            moved += 1
+        elif result == "skipped":
+            skipped += 1
+        else:
+            reason = "目标已存在且内容不同" if result == "conflict" else "文件被占用"
+            problems.append(f"{path.name}（{reason}）")
+
+    for month, path in sorted(monthlies):
+        if month == latest_monthly:
+            continue
+        dest = outdir / "归档" / month / path.name
+        result = _move_report(path, dest)
+        if result == "moved":
+            moved += 1
+        elif result == "skipped":
+            skipped += 1
+        else:
+            reason = "目标已存在且内容不同" if result == "conflict" else "文件被占用"
+            problems.append(f"{path.name}（{reason}）")
+
+    if moved or skipped:
+        extra = f"，跳过 {skipped} 个已存在" if skipped else ""
+        print(f"整理：归档 {moved} 个旧报告{extra}")
+    for problem in problems:
+        print(f"  未归档：{problem}")
+    return moved, skipped, problems
+
+
 # ---------------------------------------------------------------------------
 # 读取预警导出
 # ---------------------------------------------------------------------------
@@ -786,6 +860,8 @@ def cmd_daily(args) -> None:
     print(f"日报输出：{out_path}")
     if ledger_path:
         print(f"台账：{ledger_path}")
+    if not args.no_tidy:
+        tidy_reports(outdir)
 
 
 # ---------------------------------------------------------------------------
@@ -1350,6 +1426,20 @@ def cmd_monthly(args) -> None:
             )
         )
     print(f"月报输出：{out_path}")
+    if not args.no_tidy:
+        tidy_reports(out_path.parent)
+
+
+def cmd_tidy(args) -> None:
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        if args.outdir else Path.cwd()
+    )
+    if not outdir.is_dir():
+        raise UserError(f"工作目录不存在：{outdir}")
+    moved, skipped, problems = tidy_reports(outdir)
+    if not moved and not skipped and not problems:
+        print("没有需要整理的旧报告。")
 
 
 def cmd_archive(args) -> None:
@@ -1386,21 +1476,23 @@ def cmd_archive(args) -> None:
 
     daily_files = sorted(outdir.glob(f"准确率日报_{month}-*.xlsx"))
     monthly_file = outdir / f"准确率月报_{month}.xlsx"
-    files = list(daily_files)
+    pairs = [
+        (src, archive_dir / "日报" / src.name)
+        for src in daily_files
+    ]
     if monthly_file.exists():
-        files.append(monthly_file)
+        pairs.append((monthly_file, archive_dir / monthly_file.name))
     else:
         print(
             f"提示：没有找到 {monthly_file.name}，本次只归档日报；"
             "月报生成后再跑一次 archive 即可。"
         )
-    if not files:
+    if not pairs:
         print(f"没有找到 {month} 的日报或月报，未执行归档。")
         return
 
     conflicts = []
-    for src in files:
-        dest = archive_dir / src.name
+    for src, dest in pairs:
         if dest.exists() and not (
             dest.is_file() and filecmp.cmp(src, dest, shallow=False)
         ):
@@ -1412,25 +1504,28 @@ def cmd_archive(args) -> None:
         )
 
     if args.dry_run:
-        print(f"预览：将归档 {len(files)} 个文件到 {archive_dir}")
-        for src in files:
-            print(f"  {src.name}")
+        print(f"预览：将归档 {len(pairs)} 个文件到 {archive_dir}")
+        for src, dest in pairs:
+            print(f"  {src.name} -> {dest}")
         return
 
     archive_dir.mkdir(parents=True, exist_ok=True)
     moved = 0
     skipped = 0
-    for src in files:
-        dest = archive_dir / src.name
-        if dest.exists():
-            src.unlink()
+    problems = []
+    for src, dest in pairs:
+        result = _move_report(src, dest)
+        if result == "moved":
+            moved += 1
+        elif result == "skipped":
             skipped += 1
         else:
-            shutil.move(str(src), str(dest))
-            moved += 1
+            problems.append(src.name)
     print(
         f"归档完成：移动 {moved} 个，跳过已存在 {skipped} 个 → {archive_dir}"
     )
+    if problems:
+        print("  未归档：" + "、".join(problems))
 
 
 # ---------------------------------------------------------------------------
@@ -1480,6 +1575,9 @@ def build_parser() -> argparse.ArgumentParser:
     daily.add_argument("--out", help="日报 xlsx 的完整输出路径")
     daily.add_argument("--ledger", help="台账 CSV 路径，默认输出目录/台账/准确率台账.csv")
     daily.add_argument("--no-ledger", action="store_true", help="不更新台账")
+    daily.add_argument(
+        "--no-tidy", action="store_true", help="不自动把旧日报/月报收进 归档/"
+    )
     daily.set_defaults(func=cmd_daily)
 
     monthly = sub.add_parser("monthly", help="按月份汇总台账，生成月报")
@@ -1487,7 +1585,14 @@ def build_parser() -> argparse.ArgumentParser:
     monthly.add_argument("--ledger", required=True, help="准确率台账.csv 路径")
     monthly.add_argument("--out", help="月报 xlsx 的完整输出路径")
     monthly.add_argument("--today", help="调试用：把“今天”固定为 YYYY-MM-DD")
+    monthly.add_argument(
+        "--no-tidy", action="store_true", help="不自动把旧日报/月报收进 归档/"
+    )
     monthly.set_defaults(func=cmd_monthly)
+
+    tidy = sub.add_parser("tidy", help="手动把旧日报/月报整理到 归档/YYYY-MM/")
+    tidy.add_argument("--outdir", help="工作目录，默认当前目录")
+    tidy.set_defaults(func=cmd_tidy)
 
     archive = sub.add_parser(
         "archive", help="把某个月的日报和月报移动到 归档/YYYY-MM/"

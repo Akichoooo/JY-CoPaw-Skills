@@ -62,12 +62,16 @@ python alarm-accuracy-report/scripts/accuracy_report.py daily <导出.xlsx> \
 python alarm-accuracy-report/scripts/accuracy_report.py monthly \
   --month 2026-10 --ledger <工作目录>/台账/准确率台账.csv
 
+# 手动整理旧日报/月报（daily/monthly 默认会自动整理）
+python alarm-accuracy-report/scripts/accuracy_report.py tidy \
+  --outdir <工作目录>
+
 # 月末归档：日报/月报 → 归档/2026-10/（台账不动）
 python alarm-accuracy-report/scripts/accuracy_report.py archive \
   --month 2026-10 --outdir <工作目录>
 ```
 
-默认输出：`准确率日报_YYYY-MM-DD.xlsx`（每天一份，不覆盖昨天）和 `准确率月报_YYYY-MM.xlsx`；台账收在 `台账/` 子目录。误报原因会写入日报和台账；没有填的技能显示“未填写”，脚本也会提示。导出里有测试技能（如 `机器狗测试技能`）时，加 `--exclude "机器狗测试技能"`，不计入总数和准确率。月末归档只移动报告，台账留在 `台账/`，历史月报仍可重跑。
+默认输出：`准确率日报_YYYY-MM-DD.xlsx`（每天一份，不覆盖昨天）和 `准确率月报_YYYY-MM.xlsx`；根目录只留最新一份日报和最新一份月报，旧日报自动进 `归档/YYYY-MM/日报/`、旧月报进 `归档/YYYY-MM/`。台账收在 `台账/` 子目录。误报原因会写入日报和台账；没有填的技能显示“未填写”，脚本也会提示。导出里有测试技能（如 `机器狗测试技能`）时，加 `--exclude "机器狗测试技能"`，不计入总数和准确率。月末归档只移动报告，台账留在 `台账/`，历史月报仍可重跑。
 
 口径细节见 `alarm-accuracy-report/SKILL.md`。
 
