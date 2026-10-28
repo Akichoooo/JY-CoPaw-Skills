@@ -63,7 +63,7 @@ python alarm-accuracy-report/scripts/accuracy_report.py monthly \
   --month 2026-10 --ledger <工作目录>/台账/准确率台账.csv
 ```
 
-默认输出两份报告：`准确率日报.xlsx`（每天覆盖，报告内写日期）和 `准确率月报_YYYY-MM.xlsx`；台账收在 `台账/` 子目录。误报原因会写入日报和台账；没有填的技能显示“未填写”，脚本也会提示。导出里有测试技能（如 `机器狗测试技能`）时，加 `--exclude "机器狗测试技能"`，不计入总数和准确率。
+默认输出：`准确率日报_YYYY-MM-DD.xlsx`（每天一份，不覆盖昨天）和 `准确率月报_YYYY-MM.xlsx`；台账收在 `台账/` 子目录。误报原因会写入日报和台账；没有填的技能显示“未填写”，脚本也会提示。导出里有测试技能（如 `机器狗测试技能`）时，加 `--exclude "机器狗测试技能"`，不计入总数和准确率。
 
 口径细节见 `alarm-accuracy-report/SKILL.md`。
 
