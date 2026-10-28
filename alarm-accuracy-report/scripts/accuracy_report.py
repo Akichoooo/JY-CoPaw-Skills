@@ -277,12 +277,55 @@ def read_export(path: Path, sheet_name: str | None = None) -> dict:
         "sheet": ws.title,
         "counts": counts,
         "total": len(records),
+        "records": records,
         "time_min_dt": min(times) if times else None,
         "time_max_dt": max(times) if times else None,
         "time_min": fmt_dt(min(times)) if times else "—",
         "time_max": fmt_dt(max(times)) if times else "—",
         "duplicates": duplicates,
     }
+
+
+def exclude_skills(data: dict, excluded: list[str]) -> dict:
+    names = [name.strip() for name in excluded if name.strip()]
+    if not names:
+        return data
+
+    known = set(data["counts"])
+    unknown = [name for name in names if name not in known]
+    if unknown:
+        available = "、".join(sorted(known, key=lambda key: (-data["counts"][key], key)))
+        raise UserError(
+            f"要排除的技能不在导出表中：{'、'.join(unknown)}。可选技能：{available}"
+        )
+
+    excluded_set = set(names)
+    excluded_counts = {name: data["counts"][name] for name in excluded_set}
+    records = [item for item in data["records"] if item["skill"] not in excluded_set]
+    if not records:
+        raise UserError("排除后没有剩余预警记录，无法生成日报。")
+
+    counts = Counter(item["skill"] for item in records)
+    times = [parse_dt(item["time"]) for item in records]
+    times = [item for item in times if item]
+    ids = [
+        str(item["id"]).strip()
+        for item in records
+        if item["id"] not in (None, "")
+    ]
+    result = dict(data)
+    result.update({
+        "counts": counts,
+        "total": len(records),
+        "records": records,
+        "time_min_dt": min(times) if times else None,
+        "time_max_dt": max(times) if times else None,
+        "time_min": fmt_dt(min(times)) if times else "—",
+        "time_max": fmt_dt(max(times)) if times else "—",
+        "duplicates": [key for key, value in Counter(ids).items() if value > 1],
+        "excluded_counts": excluded_counts,
+    })
+    return result
 
 
 # ---------------------------------------------------------------------------
@@ -367,6 +410,8 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
     accurate_total = total - false_total
     accuracy_total = accurate_total / total
     generated_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    excluded_counts = data.get("excluded_counts") or {}
+    excluded_total = sum(excluded_counts.values())
 
     skills = sorted(data["counts"], key=lambda key: (-data["counts"][key], key))
     records = []
@@ -394,10 +439,13 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
     ncols = 7
 
     add_title(ws, "预警准确率日报", ncols)
+    total_text = f"预警总数：{total} 条"
+    if excluded_counts:
+        total_text += f"（已排除 {excluded_total} 条测试数据）"
     add_note(
         ws, 2,
         f"报表日期：{report_date}　｜　统计区间：{data['time_min']} 至 {data['time_max']}"
-        f"　｜　数据源：{data['source']}　｜　预警总数：{total} 条",
+        f"　｜　数据源：{data['source']}　｜　{total_text}",
         ncols,
     )
     add_note(
@@ -478,6 +526,18 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
             ncols, fill=COLOR_WARN_FILL, font_color=COLOR_WARN_FONT, bold=True,
         )
         note_row += 1
+    if excluded_counts:
+        add_note(
+            ws, note_row,
+            "已排除、不计入统计："
+            + "、".join(
+                f"{skill} {count} 条"
+                for skill, count in sorted(excluded_counts.items())
+            )
+            + "。",
+            ncols, fill=COLOR_MISSING_FILL, font_color=COLOR_GREY,
+        )
+        note_row += 1
     if assumed:
         add_note(
             ws, note_row,
@@ -506,7 +566,7 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
     add_title(ws2, "预警准确率明细核对", 7, size=13)
     add_note(
         ws2, 2,
-        f"报表日期：{report_date}　｜　数据源：{data['source']}　｜　预警总数：{total} 条",
+        f"报表日期：{report_date}　｜　数据源：{data['source']}　｜　{total_text}",
         7,
     )
     write_header_row(ws2, 4, [
@@ -534,8 +594,21 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
         )
         ws2.row_dimensions[row2].height = 28 if len(reason_text) > 18 else 22
         row2 += 1
+    note2_row = row2 + 1
+    if excluded_counts:
+        add_note(
+            ws2, note2_row,
+            "已排除、不计入统计："
+            + "、".join(
+                f"{skill} {count} 条"
+                for skill, count in sorted(excluded_counts.items())
+            )
+            + "。",
+            7, fill=COLOR_MISSING_FILL,
+        )
+        note2_row += 1
     add_note(
-        ws2, row2 + 1,
+        ws2, note2_row,
         "“未提及，按 0 误报”表示当天用户只报了其他技能的误报数；如该技能实际有误报，请补充后重跑。",
         7,
     )
@@ -620,8 +693,17 @@ def update_ledger(ledger_path: Path, report_date: str, records: list[dict]) -> N
 def cmd_daily(args) -> None:
     export = Path(args.export).expanduser().resolve()
     data = read_export(export, args.sheet)
+    data = exclude_skills(data, args.exclude)
 
     if args.list_skills:
+        if data.get("excluded_counts"):
+            print(
+                "已排除、不统计："
+                + "、".join(
+                    f"{skill} {count} 条"
+                    for skill, count in sorted(data["excluded_counts"].items())
+                )
+            )
         print(f"技能清单（{data['total']} 条预警）：")
         for skill in sorted(data["counts"], key=lambda key: (-data["counts"][key], key)):
             print(f"  {skill}: {data['counts'][skill]} 条")
@@ -691,6 +773,14 @@ def cmd_daily(args) -> None:
         print("  未填写误报原因：" + "、".join(missing_reason))
     if assumed:
         print("  未提及、按 0 误报：" + "、".join(assumed))
+    if data.get("excluded_counts"):
+        print(
+            "  已排除、不统计："
+            + "、".join(
+                f"{skill} {count} 条"
+                for skill, count in sorted(data["excluded_counts"].items())
+            )
+        )
     print(f"日报输出：{out_path}")
     if ledger_path:
         print(f"台账：{ledger_path}")
@@ -1291,6 +1381,10 @@ def build_parser() -> argparse.ArgumentParser:
     daily.add_argument(
         "--reason", action="append", default=[], metavar="技能=原因",
         help="某技能的误报原因，可重复；通常与 --false 配套，未填写的显示“未填写”",
+    )
+    daily.add_argument(
+        "--exclude", action="append", default=[], metavar="技能",
+        help="不统计的技能，可重复；其预警条数不计入总数和准确率",
     )
     daily.add_argument("--sheet", help="工作表名，默认自动查找包含“预警技能”的表")
     daily.add_argument(
