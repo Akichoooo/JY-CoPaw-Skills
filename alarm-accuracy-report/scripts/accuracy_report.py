@@ -156,6 +156,16 @@ def write_header_row(ws, row: int, headers: list[str]) -> None:
     ws.row_dimensions[row].height = 26
 
 
+def reason_row_height(text: str) -> int:
+    if len(text) > 60:
+        return 58
+    if len(text) > 36:
+        return 44
+    if len(text) > 18:
+        return 30
+    return 22
+
+
 def write_row(ws, row: int, values: list, percent_cols=(), bold: bool = False,
               fill: str | None = None, font_color: str | None = None,
               center_first: bool = False, left_cols=()) -> None:
@@ -557,7 +567,7 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
             bold=low,
             left_cols=(6,),
         )
-        ws.row_dimensions[row].height = 28 if len(reason_text) > 18 else 22
+        ws.row_dimensions[row].height = reason_row_height(reason_text)
         row += 1
 
     write_row(
@@ -668,7 +678,7 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
             bold=accuracy < 0.9,
             left_cols=(6,),
         )
-        ws2.row_dimensions[row2].height = 28 if len(reason_text) > 18 else 22
+        ws2.row_dimensions[row2].height = reason_row_height(reason_text)
         row2 += 1
     note2_row = row2 + 1
     if excluded_counts:
@@ -1075,7 +1085,7 @@ def build_monthly_workbook(month: str, rows: list[dict], today: date):
             bold=low,
             left_cols=(4,),
         )
-        ws.row_dimensions[row].height = 28 if len(reason_text) > 18 else 22
+        ws.row_dimensions[row].height = reason_row_height(reason_text)
         row += 1
     write_row(
         ws, row,

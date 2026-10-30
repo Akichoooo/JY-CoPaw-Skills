@@ -2,7 +2,7 @@
 name: alarm-accuracy-report
 description: 预警准确率日报/月报。读取预警平台导出的“预警详情”Excel，按用户提供的各技能误报条数和误报原因计算准确率；自动维护准确率台账，并按月份汇总月报（总览、技能汇总、每日明细、技能×日期矩阵、趋势图）。触发词：预警准确率、算法准确率、误报统计、准确率日报、准确率月报、准确率台账、alarm-accuracy-report。
 author: JY
-version: 1.5.0
+version: 1.5.1
 ---
 
 # alarm-accuracy-report — 预警准确率日报 / 月报
