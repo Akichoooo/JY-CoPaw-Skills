@@ -1,8 +1,8 @@
 ---
 name: alarm-accuracy-report
-description: 预警准确率日报/月报。读取预警平台导出的“预警详情”Excel，按用户提供的各技能误报条数和误报原因计算准确率；自动维护准确率台账，并按月份汇总月报（总览、技能汇总、每日明细、技能×日期矩阵、趋势图）。触发词：预警准确率、算法准确率、误报统计、准确率日报、准确率月报、准确率台账、alarm-accuracy-report。
+description: 预警准确率日报/月报。读取预警平台导出的“预警详情”Excel，按用户提供的各技能误报条数和误报原因计算准确率；也支持导入已有准确率汇总表；自动维护准确率台账，并按月份汇总月报（总览、技能汇总、每日明细、技能×日期矩阵、趋势图）。触发词：预警准确率、算法准确率、误报统计、准确率日报、准确率月报、准确率台账、alarm-accuracy-report。
 author: JY
-version: 1.5.1
+version: 1.6.0
 ---
 
 # alarm-accuracy-report — 预警准确率日报 / 月报
@@ -104,6 +104,21 @@ python <skill_dir>/scripts/accuracy_report.py tidy --outdir <工作目录>
 ```
 
 不想自动整理时，给 `daily` / `monthly` 加 `--no-tidy`。
+
+## 导入已有汇总表
+
+某天没有原始导出、只有一张已经做好的准确率汇总表（至少含 `预警技能`、`预警总数`、`误报数`，可含 `误报原因`）时，直接导入：
+
+```bash
+python <skill_dir>/scripts/accuracy_report.py import-summary <汇总表.xlsx> \
+  --date 2026-10-31 --outdir <工作目录> --ledger <工作目录>/台账/准确率台账.csv
+```
+
+- 会生成标准 `准确率日报_YYYY-MM-DD.xlsx`，并把当天数据写入台账；同一天重跑会覆盖。
+- `合计 / 总计 / 小计` 行会跳过；误报数超过总数会报错。
+- 测试技能用 `--exclude "机器狗测试技能"` 排除。
+- 没有原始导出时，统计区间显示“—”，这是正常的。
+- 只想更新台账不生成日报：加 `--no-report`；不想自动整理：加 `--no-tidy`。
 
 ## 月末归档
 

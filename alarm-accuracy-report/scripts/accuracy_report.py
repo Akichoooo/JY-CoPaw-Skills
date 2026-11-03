@@ -414,6 +414,83 @@ def exclude_skills(data: dict, excluded: list[str]) -> dict:
     return result
 
 
+def read_summary_workbook(path: Path, sheet_name: str | None = None) -> list[dict]:
+    if not path.exists():
+        raise UserError(f"找不到汇总表：{path}")
+    if path.suffix.lower() not in (".xlsx", ".xlsm"):
+        raise UserError(f"只支持 .xlsx / .xlsm，收到：{path.suffix}。.xls 请先另存为 .xlsx。")
+    try:
+        wb = load_workbook(path, data_only=True)
+    except Exception as exc:
+        raise UserError(f"无法读取 Excel：{exc}")
+
+    if sheet_name:
+        if sheet_name not in wb.sheetnames:
+            raise UserError(
+                f"工作表“{sheet_name}”不存在。现有工作表：{'、'.join(wb.sheetnames)}"
+            )
+        candidates = [wb[sheet_name]]
+    else:
+        candidates = list(wb.worksheets)
+
+    found = None
+    for ws in candidates:
+        header_row, headers = find_header(ws)
+        if header_row and "预警总数" in headers and "误报数" in headers:
+            found = (ws, header_row, headers)
+            break
+    if not found:
+        raise UserError(
+            "没有找到包含“预警技能 / 预警总数 / 误报数”的汇总表。"
+        )
+
+    ws, header_row, headers = found
+    skill_idx = headers["预警技能"]
+    total_idx = headers["预警总数"]
+    false_idx = headers["误报数"]
+    reason_idx = headers.get("误报原因")
+    items = []
+
+    for row in ws.iter_rows(min_row=header_row + 1, values_only=True):
+        def get(idx):
+            if idx is None or idx >= len(row):
+                return None
+            return row[idx]
+
+        skill = str(get(skill_idx) or "").strip()
+        if not skill or skill in {"合计", "总计", "小计"}:
+            continue
+        total_raw = get(total_idx)
+        if total_raw in (None, ""):
+            continue
+        try:
+            total = int(float(str(total_raw).strip()))
+        except ValueError:
+            raise UserError(f"技能“{skill}”的预警总数不是整数：{total_raw}")
+        if total <= 0:
+            continue
+        false_raw = get(false_idx)
+        try:
+            false = int(float(str(false_raw).strip())) if false_raw not in (None, "") else 0
+        except ValueError:
+            raise UserError(f"技能“{skill}”的误报数不是整数：{false_raw}")
+        if false < 0 or false > total:
+            raise UserError(
+                f"技能“{skill}”数量不合法：总数 {total}，误报 {false}。"
+            )
+        reason = str(get(reason_idx) or "").strip() if reason_idx is not None else ""
+        items.append({
+            "skill": skill,
+            "total": total,
+            "false": false,
+            "reason": reason,
+        })
+
+    if not items:
+        raise UserError("汇总表里没有有效技能行。")
+    return items
+
+
 # ---------------------------------------------------------------------------
 # 日报
 # ---------------------------------------------------------------------------
@@ -587,7 +664,7 @@ def build_daily_workbook(report_date: str, data: dict, false: dict,
     note_row = row + 2
     specified_parts = []
     for skill in skills:
-        if skill not in specified:
+        if skill not in specified or false[skill] == 0:
             continue
         if skill in all_skills:
             part = f"{skill} {false[skill]} 条（全部误报）"
@@ -1538,6 +1615,109 @@ def cmd_archive(args) -> None:
         print("  未归档：" + "、".join(problems))
 
 
+def cmd_import_summary(args) -> None:
+    path = Path(args.summary).expanduser().resolve()
+    report_date = args.date.strip()
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", report_date):
+        raise UserError(f"--date 格式应为 YYYY-MM-DD，收到：{report_date}")
+    try:
+        date.fromisoformat(report_date)
+    except ValueError:
+        raise UserError(f"--date 不是有效日期：{report_date}")
+
+    items = read_summary_workbook(path, args.sheet)
+    excluded_names = {name.strip() for name in args.exclude if name.strip()}
+    if excluded_names:
+        known = {item["skill"] for item in items}
+        unknown = sorted(excluded_names - known)
+        if unknown:
+            available = "、".join(sorted(known))
+            raise UserError(
+                f"要排除的技能不在汇总表中：{'、'.join(unknown)}。可选技能：{available}"
+            )
+
+    excluded_counts = {
+        item["skill"]: item["total"]
+        for item in items
+        if item["skill"] in excluded_names
+    }
+    kept = [item for item in items if item["skill"] not in excluded_names]
+    if not kept:
+        raise UserError("排除后没有有效技能，无法生成日报。")
+
+    counts = Counter({item["skill"]: item["total"] for item in kept})
+    false = {item["skill"]: item["false"] for item in kept}
+    reasons = {
+        item["skill"]: item["reason"]
+        for item in kept
+        if item["reason"]
+    }
+    specified = {item["skill"]: item["false"] for item in kept}
+    all_skills = {
+        item["skill"] for item in kept
+        if item["total"] > 0 and item["false"] == item["total"]
+    }
+    total = sum(counts.values())
+    false_total = sum(false.values())
+    accurate_total = total - false_total
+    data = {
+        "source": path.name,
+        "sheet": "汇总表",
+        "counts": counts,
+        "total": total,
+        "time_min": "—",
+        "time_max": "—",
+        "duplicates": [],
+        "excluded_counts": excluded_counts,
+    }
+    wb, records = build_daily_workbook(
+        report_date, data, false, specified, all_skills, [], reasons
+    )
+
+    outdir = (
+        Path(args.outdir).expanduser().resolve()
+        if args.outdir else path.parent
+    )
+    outdir.mkdir(parents=True, exist_ok=True)
+    out_path = None
+    if not args.no_report:
+        if args.out:
+            out_path = Path(args.out).expanduser().resolve()
+        else:
+            out_path = outdir / f"准确率日报_{report_date}.xlsx"
+        safe_save(wb, out_path)
+
+    ledger_path = None
+    if not args.no_ledger:
+        if args.ledger:
+            ledger_path = Path(args.ledger).expanduser().resolve()
+            if ledger_path.is_dir():
+                ledger_path = ledger_path / "准确率台账.csv"
+        else:
+            ledger_path = outdir / "台账" / "准确率台账.csv"
+        update_ledger(ledger_path, report_date, records)
+
+    print(
+        f"导入 {report_date} | 预警 {total} | 误报 {false_total} | "
+        f"准确 {accurate_total} | 准确率 {accurate_total / total:.1%}"
+    )
+    print(f"  汇总表技能 {len(kept)} 个")
+    if excluded_counts:
+        print(
+            "  已排除、不统计："
+            + "、".join(
+                f"{skill} {count} 条"
+                for skill, count in sorted(excluded_counts.items())
+            )
+        )
+    if out_path:
+        print(f"日报输出：{out_path}")
+    if ledger_path:
+        print(f"台账：{ledger_path}")
+    if out_path and not args.no_tidy:
+        tidy_reports(outdir)
+
+
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
@@ -1620,6 +1800,25 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="允许归档当前月份"
     )
     archive.set_defaults(func=cmd_archive)
+
+    summary = sub.add_parser(
+        "import-summary",
+        help="从已有准确率汇总表导入某天数据，可生成标准日报并更新台账",
+    )
+    summary.add_argument("summary", help="汇总表 xlsx，需含 预警技能/预警总数/误报数")
+    summary.add_argument("--date", required=True, help="报表日期 YYYY-MM-DD")
+    summary.add_argument("--sheet", help="工作表名，默认自动查找")
+    summary.add_argument(
+        "--exclude", action="append", default=[], metavar="技能",
+        help="不统计的技能，可重复",
+    )
+    summary.add_argument("--outdir", help="输出目录，默认汇总表所在目录")
+    summary.add_argument("--out", help="日报 xlsx 的完整输出路径")
+    summary.add_argument("--ledger", help="台账 CSV 路径，默认输出目录/台账/准确率台账.csv")
+    summary.add_argument("--no-ledger", action="store_true", help="不更新台账")
+    summary.add_argument("--no-report", action="store_true", help="只更新台账，不生成日报")
+    summary.add_argument("--no-tidy", action="store_true", help="不自动整理旧报告")
+    summary.set_defaults(func=cmd_import_summary)
 
     return parser
 

@@ -66,6 +66,10 @@ python alarm-accuracy-report/scripts/accuracy_report.py monthly \
 python alarm-accuracy-report/scripts/accuracy_report.py tidy \
   --outdir <工作目录>
 
+# 没有原始导出、只有汇总表时，导入某天数据并生成日报
+python alarm-accuracy-report/scripts/accuracy_report.py import-summary <汇总表.xlsx> \
+  --date 2026-10-31 --outdir <工作目录>
+
 # 月末归档：日报/月报 → 归档/2026-10/（台账不动）
 python alarm-accuracy-report/scripts/accuracy_report.py archive \
   --month 2026-10 --outdir <工作目录>
